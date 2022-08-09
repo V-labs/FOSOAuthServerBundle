@@ -29,7 +29,9 @@ use OAuth2\OAuth2;
 use OAuth2\OAuth2ServerException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 
 class OAuthStorage implements IOAuth2RefreshTokens, IOAuth2GrantUser, IOAuth2GrantCode, IOAuth2GrantImplicit, IOAuth2GrantClient, IOAuth2GrantExtension, GrantExtensionDispatcherInterface
@@ -65,13 +67,18 @@ class OAuthStorage implements IOAuth2RefreshTokens, IOAuth2GrantUser, IOAuth2Gra
     protected $passwordHasherFactory;
 
     /**
+     * @var UserPasswordHasherInterface
+     */
+    protected $userPasswordHasher;
+
+    /**
      * @var array [uri] => GrantExtensionInterface
      */
     protected $grantExtensions;
 
     public function __construct(ClientManagerInterface $clientManager, AccessTokenManagerInterface $accessTokenManager,
-        RefreshTokenManagerInterface $refreshTokenManager, AuthCodeManagerInterface $authCodeManager,
-        UserProviderInterface $userProvider = null, PasswordHasherFactoryInterface $passwordHasherFactory = null)
+                                RefreshTokenManagerInterface $refreshTokenManager, AuthCodeManagerInterface $authCodeManager,
+                                UserProviderInterface $userProvider = null, PasswordHasherFactoryInterface $passwordHasherFactory = null, UserPasswordHasherInterface $userPasswordHasher = null)
     {
         $this->clientManager = $clientManager;
         $this->accessTokenManager = $accessTokenManager;
@@ -79,6 +86,7 @@ class OAuthStorage implements IOAuth2RefreshTokens, IOAuth2GrantUser, IOAuth2Gra
         $this->authCodeManager = $authCodeManager;
         $this->userProvider = $userProvider;
         $this->passwordHasherFactory = $passwordHasherFactory;
+        $this->userPasswordHasher = $userPasswordHasher;
 
         $this->grantExtensions = [];
     }
@@ -157,8 +165,11 @@ class OAuthStorage implements IOAuth2RefreshTokens, IOAuth2GrantUser, IOAuth2Gra
             return false;
         }
 
-        $passwordHasher = $this->passwordHasherFactory->getPasswordHasher($user);
-        if ($passwordHasher->isPasswordValid($user->getPassword(), $password, $user->getSalt())) {
+        $isPasswordValid = $user instanceof PasswordAuthenticatedUserInterface
+            ? $this->userPasswordHasher->isPasswordValid($user, $password)
+            : $this->passwordHasherFactory->getPasswordHasher($user)->verify($user->getPassword(), $password);
+
+        if ($isPasswordValid) {
             return [
                 'data' => $user,
             ];
